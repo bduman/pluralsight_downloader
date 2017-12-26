@@ -1,4 +1,5 @@
 import os
+import string
 import time
 import requests
 import config
@@ -7,7 +8,10 @@ from tinytag import TinyTag
 from clint.textui import progress
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
-from slugify import slugify
+
+
+def remove_punctuation(text):
+    return re.sub("[" + str(string.punctuation) + "]", "", text)
 
 
 def create_dir(directory):
@@ -18,12 +22,13 @@ def create_dir(directory):
 
 def download(url, path):
     r = requests.get(url, stream=True)
-    with open(path, 'wb') as f:
-        total_length = int(r.headers.get('content-length'))
+    with open(path, "wb") as f:
+        total_length = int(r.headers.get("content-length"))
         for chunk in progress.bar(r.iter_content(chunk_size=1024), expected_size=(total_length / 1024) + 1):
             if chunk:
                 f.write(chunk)
                 f.flush()
+        f.close()
 
 
 def length_of_video(clip_path):
@@ -43,14 +48,15 @@ def duration_to_seconds(duration):
         else:
             matches = re.match("(\d+)m", duration, re.I)
             if matches:
-                return int(matches.group(1))
+                return int(matches.group(1)) * 60
     return 0
 
 
 class Download:
     def __init__(self, link):
         self.link = link
-        self.output = "Download"
+        self.current_folder = os.path.dirname(__file__)
+        self.output = os.path.join(self.current_folder, "Download")
         self.delay = config.Delay
         self.username = config.Username
         self.password = config.Password
@@ -89,7 +95,8 @@ class Download:
         opened_module_class = ".module.open"
 
         # fetching course title
-        self.output = self.browser.find_element_by_id("course-title").text
+        course_title = remove_punctuation(self.browser.title)
+        self.output = os.path.join(self.current_folder, course_title)
         # create output folder with course name
         create_dir(self.output)
         # click all closed sections to open
@@ -102,19 +109,19 @@ class Download:
 
         for i in range(len(all_modules)):
             # fetching module title
-            module_title = all_modules[i].find_element_by_tag_name("h2").text
+            module_title = remove_punctuation(all_modules[i].find_element_by_tag_name("h2").text)
             # create module folder
-            module_folder = self.output + "/" + str(i) + "-" + slugify(module_title)
+            module_folder = os.path.join(self.output, str(i) + "-" + module_title)
             create_dir(module_folder)
             # fetching clips each module
             all_clips = all_modules[i].find_elements_by_tag_name("li")
             for j in range(len(all_clips)):
                 print("\n")
                 clip = all_clips[j]
-                clip_title = clip.find_element_by_tag_name("h3").text
+                clip_title = remove_punctuation(clip.find_element_by_tag_name("h3").text)
                 clip_duration = clip.find_element_by_css_selector(".side-menu-clip-duration").text
-                clip_file = str(j) + "-" + slugify(clip_title) + ".mp4"
-                clip_path = module_folder + "/" + clip_file
+                clip_file = str(j) + "-" + clip_title + ".mp4"
+                clip_path = os.path.join(module_folder, clip_file)
                 validated = False
                 try_download = 0
                 while not validated and not try_download == self.try_download_times:
@@ -143,6 +150,6 @@ class Download:
                             self.fail_downloads = self.fail_downloads + 1
 
     def get_video_link(self):
-        video_elt = self.browser.find_element_by_tag_name('video')
+        video_elt = self.browser.find_element_by_tag_name("video")
         link = video_elt.get_attribute("src")
         return link
